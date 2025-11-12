@@ -424,8 +424,8 @@ class SpotifyAPIClient:
             max_albums: Maximum number of albums to analyze
 
         Returns:
-            Dictionary mapping collaborator IDs to their info and collaboration count
-            Format: {artist_id: {"name": str, "count": int, "tracks": [str]}}
+            Dictionary mapping normalized artist names to their info and collaboration count
+            Format: {artist_name: {"id": str, "name": str, "count": int, "tracks": [str]}}
 
         Raises:
             SpotifyAPIError: If API requests fail
@@ -438,10 +438,16 @@ class SpotifyAPIClient:
 
         print(f"Fetching collaborators for artist ID: {artist_id}")
 
+        # Get the main artist's info to filter them out
+        main_artist_info = self._make_request(f"/artists/{artist_id}")
+        main_artist_name = main_artist_info["name"].lower()
+        print(f"Main artist: {main_artist_info['name']}")
+
         # Get artist's albums
         albums = self.get_artist_albums(artist_id, limit=max_albums)
         print(f"Found {len(albums)} albums")
 
+        # Use normalized names as keys to avoid duplicates
         collaborators = {}
 
         # Process each album
@@ -454,35 +460,47 @@ class SpotifyAPIClient:
                 for track in tracks:
                     # Check all artists on the track
                     for artist in track["artists"]:
-                        # Skip if it's the main artist
-                        if artist["id"] == artist_id:
+                        # Skip if it's the main artist (by ID or name)
+                        artist_name_lower = artist["name"].lower()
+                        if artist["id"] == artist_id or artist_name_lower == main_artist_name:
                             continue
 
-                        # Add or update collaborator
-                        if artist["id"] not in collaborators:
-                            collaborators[artist["id"]] = {
-                                "name": artist["name"],
+                        # Use normalized name as key to avoid duplicates
+                        if artist_name_lower not in collaborators:
+                            collaborators[artist_name_lower] = {
+                                "id": artist["id"],
+                                "name": artist["name"],  # Keep original capitalization
                                 "count": 0,
                                 "tracks": []
                             }
 
-                        collaborators[artist["id"]]["count"] += 1
-                        collaborators[artist["id"]]["tracks"].append(track["name"])
+                        collaborators[artist_name_lower]["count"] += 1
+                        if track["name"] not in collaborators[artist_name_lower]["tracks"]:
+                            collaborators[artist_name_lower]["tracks"].append(track["name"])
 
                     # Also parse featured artists from track name
                     featured_names = self._parse_featured_artists(track["name"])
                     for featured_name in featured_names:
-                        # Store by name if we don't have ID
-                        # (This could be enhanced by searching for the artist)
-                        temp_id = f"featured_{featured_name.lower().replace(' ', '_')}"
-                        if temp_id not in collaborators:
-                            collaborators[temp_id] = {
+                        featured_name_lower = featured_name.lower()
+
+                        # Skip if it's the main artist
+                        if featured_name_lower == main_artist_name:
+                            continue
+
+                        # Skip if already in collaborators (from artist credits)
+                        if featured_name_lower in collaborators:
+                            # Just increment count, don't add as duplicate
+                            collaborators[featured_name_lower]["count"] += 1
+                            if track["name"] not in collaborators[featured_name_lower]["tracks"]:
+                                collaborators[featured_name_lower]["tracks"].append(track["name"])
+                        else:
+                            # Add new featured artist
+                            collaborators[featured_name_lower] = {
+                                "id": None,  # No ID available from track name parsing
                                 "name": featured_name,
-                                "count": 0,
-                                "tracks": []
+                                "count": 1,
+                                "tracks": [track["name"]]
                             }
-                        collaborators[temp_id]["count"] += 1
-                        collaborators[temp_id]["tracks"].append(track["name"])
 
                 # Rate limiting - be nice to the API
                 time.sleep(0.1)
@@ -528,18 +546,22 @@ if __name__ == "__main__":
 
             # Get collaborators
             print("\nFetching collaborators...")
-            collaborators = client.get_artist_collaborators(artist["id"], max_albums=5)
+            collaborators = client.get_artist_collaborators(artist["id"], max_albums=10)
 
-            # Show top 10 collaborators
+            # Show top 15 collaborators
             sorted_collabs = sorted(
                 collaborators.items(),
                 key=lambda x: x[1]["count"],
                 reverse=True
             )
 
-            print(f"\nTop 10 Collaborators:")
-            for i, (collab_id, info) in enumerate(sorted_collabs[:10], 1):
+            print(f"\nTop 15 Collaborators:")
+            for i, (artist_key, info) in enumerate(sorted_collabs[:15], 1):
+                collab_id = info.get('id', 'N/A')
                 print(f"{i}. {info['name']} - {info['count']} collaborations")
+                if i <= 5:  # Show sample tracks for top 5
+                    sample_tracks = info['tracks'][:2]
+                    print(f"   Sample tracks: {', '.join(sample_tracks)}")
 
     except AuthenticationError as e:
         print(f"Authentication error: {e}")
