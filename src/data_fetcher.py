@@ -444,15 +444,28 @@ class SpotifyAPIClient:
         print(f"Main artist: {main_artist_info['name']}")
 
         # Get artist's albums
-        albums = self.get_artist_albums(artist_id, limit=max_albums)
-        print(f"Found {len(albums)} albums")
+        all_albums = self.get_artist_albums(artist_id, limit=50)
+
+        # Prioritize studio albums over singles and appearances
+        # Sort: albums first, then singles, then appears_on
+        type_priority = {"album": 0, "single": 1, "compilation": 2, "appears_on": 3}
+        sorted_albums = sorted(
+            all_albums,
+            key=lambda x: (type_priority.get(x['type'], 4), -len(x.get('release_date', '')), x.get('release_date', ''))
+        )
+
+        # Take only the requested number of albums
+        albums = sorted_albums[:max_albums]
+
+        print(f"Found {len(all_albums)} total albums/singles")
+        print(f"Analyzing top {len(albums)} releases (prioritizing studio albums)")
 
         # Use normalized names as keys to avoid duplicates
         collaborators = {}
 
         # Process each album
-        for i, album in enumerate(albums[:max_albums], 1):
-            print(f"Processing album {i}/{min(len(albums), max_albums)}: {album['name']}")
+        for i, album in enumerate(albums, 1):
+            print(f"Processing album {i}/{len(albums)}: [{album['type']}] {album['name']} ({album.get('release_date', 'unknown')})")
 
             try:
                 tracks = self.get_album_tracks(album["id"])
@@ -546,7 +559,8 @@ if __name__ == "__main__":
 
             # Get collaborators
             print("\nFetching collaborators...")
-            collaborators = client.get_artist_collaborators(artist["id"], max_albums=10)
+            print("=" * 80)
+            collaborators = client.get_artist_collaborators(artist["id"], max_albums=15)
 
             # Show top 15 collaborators
             sorted_collabs = sorted(
