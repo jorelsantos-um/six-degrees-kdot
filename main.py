@@ -124,12 +124,21 @@ class SixDegreesApp:
         # Check if artist is in network
         if not self.network.artist_in_network(artist_id):
             print(f"\n⚠ {artist_name} is not in the current network.")
-            print("Attempting to expand network...")
+            print("Attempting to expand network with 2-degree search...")
+            print("(This will add the artist + their collaborators + their collaborators' collaborators)")
+            print("Please wait, this may take a few minutes...")
 
             try:
-                # Add the artist and their collaborators
-                new_collabs = self.network.add_artist_and_collaborators(artist_id, max_albums=15)
-                print(f"✓ Added {artist_name} and {new_collabs} collaborators to network")
+                # Build a 2-degree network from the artist to find bridges
+                # This adds: Artist → Collaborators → Collaborators' Collaborators
+                initial_size = self.network.graph.number_of_nodes()
+
+                self.network.build_network(artist_id, depth=2, max_albums=15)
+
+                final_size = self.network.graph.number_of_nodes()
+                new_artists = final_size - initial_size
+
+                print(f"\n✓ Expanded network by {new_artists} artists")
 
                 # Update saved network
                 self.network.save_network(NETWORK_FILE)
