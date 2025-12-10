@@ -296,13 +296,14 @@ class SpotifyAPIClient:
 
         return artist_data
 
-    def get_artist_albums(self, artist_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+    def get_artist_albums(self, artist_id: str, limit: int = 50, own_albums_only: bool = False) -> List[Dict[str, Any]]:
         """
         Get all albums for an artist.
 
         Args:
             artist_id: Spotify artist ID
             limit: Maximum number of albums to fetch
+            own_albums_only: If True, only return albums where the artist is the primary artist
 
         Returns:
             List of album dictionaries with id, name, and release_date
@@ -311,14 +312,14 @@ class SpotifyAPIClient:
             SpotifyAPIError: If the API request fails
         """
         # Check cache first
-        cache_key = self._generate_cache_key(f"artist_albums_{artist_id}")
+        cache_key = self._generate_cache_key(f"artist_albums_{artist_id}_{own_albums_only}")
         cached_data = self._load_from_cache(cache_key)
         if cached_data is not None:
             return cached_data
 
         # Make API request
         params = {
-            "include_groups": "album,single,appears_on",
+            "include_groups": "album,single" if own_albums_only else "album,single,appears_on",
             "limit": limit
         }
 
@@ -326,12 +327,22 @@ class SpotifyAPIClient:
 
         albums = []
         for album in response.get("items", []):
+            # Get album artists to verify ownership
+            album_artists = album.get("artists", [])
+            album_artist_ids = [artist["id"] for artist in album_artists]
+
+            # If own_albums_only, skip if this artist is not the primary artist (first in list)
+            if own_albums_only:
+                if not album_artists or album_artists[0]["id"] != artist_id:
+                    continue
+
             albums.append({
                 "id": album["id"],
                 "name": album["name"],
                 "release_date": album.get("release_date", ""),
                 "type": album.get("album_type", ""),
-                "total_tracks": album.get("total_tracks", 0)
+                "total_tracks": album.get("total_tracks", 0),
+                "is_primary_artist": album_artists[0]["id"] == artist_id if album_artists else False
             })
 
         # Cache the result
@@ -443,16 +454,29 @@ class SpotifyAPIClient:
         main_artist_name = main_artist_info["name"].lower()
         print(f"Main artist: {main_artist_info['name']}")
 
-        # Get artist's albums
-        albums = self.get_artist_albums(artist_id, limit=max_albums)
-        print(f"Found {len(albums)} albums")
+        # Get artist's albums - ONLY their own albums, not guest appearances
+        all_albums = self.get_artist_albums(artist_id, limit=50, own_albums_only=True)
+
+        # Prioritize studio albums over singles
+        # Sort: albums first (by type), then by release date (oldest first for chronological order)
+        type_priority = {"album": 0, "single": 1, "compilation": 2}
+        sorted_albums = sorted(
+            all_albums,
+            key=lambda x: (type_priority.get(x['type'], 3), x.get('release_date', ''))
+        )
+
+        # Take only the requested number of albums
+        albums = sorted_albums[:max_albums]
+
+        print(f"Found {len(all_albums)} total albums/singles")
+        print(f"Analyzing top {len(albums)} releases (prioritizing studio albums)")
 
         # Use normalized names as keys to avoid duplicates
         collaborators = {}
 
         # Process each album
-        for i, album in enumerate(albums[:max_albums], 1):
-            print(f"Processing album {i}/{min(len(albums), max_albums)}: {album['name']}")
+        for i, album in enumerate(albums, 1):
+            print(f"Processing album {i}/{len(albums)}: [{album['type']}] {album['name']} ({album.get('release_date', 'unknown')})")
 
             try:
                 tracks = self.get_album_tracks(album["id"])
@@ -546,7 +570,8 @@ if __name__ == "__main__":
 
             # Get collaborators
             print("\nFetching collaborators...")
-            collaborators = client.get_artist_collaborators(artist["id"], max_albums=10)
+            print("=" * 80)
+            collaborators = client.get_artist_collaborators(artist["id"], max_albums=15)
 
             # Show top 15 collaborators
             sorted_collabs = sorted(
