@@ -161,39 +161,35 @@ class PathFinder:
 
         output = []
 
-        # Header
-        output.append("=" * 80)
-        output.append(f"CONNECTION FOUND: {path_info['degrees']} degree(s) of separation")
-        output.append("=" * 80)
-        output.append("")
+        # Header - clean and simple
+        degree_text = "degree" if path_info['degrees'] == 1 else "degrees"
+        output.append(f"\n⚡ {path_info['degrees']} {degree_text} of separation\n")
 
         # Path visualization
-        output.append("PATH:")
         path_names = [artist["name"] for artist in path_info["path"]]
+        output.append("PATH:")
         output.append(" → ".join(path_names))
         output.append("")
 
         # Detailed connections
         output.append("CONNECTIONS:")
-        output.append("-" * 80)
-
         for i, conn in enumerate(path_info["connections"], 1):
-            output.append(f"\n{i}. {conn['from']['name']} → {conn['to']['name']}")
+            output.append(f"{i}. {conn['from']['name']} & {conn['to']['name']}")
 
             if conn["songs"]:
-                # Show up to 5 songs
-                songs_to_show = conn["songs"][:5]
-                output.append(f"   Collaborated on:")
-                for song in songs_to_show:
-                    output.append(f"      • {song}")
+                # Show up to 3 songs
+                songs_to_show = conn["songs"][:3]
+                songs_list = ", ".join(songs_to_show)
 
-                if len(conn["songs"]) > 5:
-                    output.append(f"      ... and {len(conn['songs']) - 5} more")
+                remaining = len(conn["songs"]) - 3
+                if remaining > 0:
+                    output.append(f"   • {songs_list} ... and {remaining} more")
+                else:
+                    output.append(f"   • {songs_list}")
             else:
-                output.append("   (Collaboration details unavailable)")
+                output.append("   • (Collaboration details unavailable)")
 
-        output.append("")
-        output.append("=" * 80)
+            output.append("")
 
         return "\n".join(output)
 
