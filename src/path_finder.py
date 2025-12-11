@@ -177,15 +177,14 @@ class PathFinder:
             output.append(f"{i}. {conn['from']['name']} & {conn['to']['name']}")
 
             if conn["songs"]:
-                # Show up to 3 songs
+                # Show up to 3 songs, each on its own line
                 songs_to_show = conn["songs"][:3]
-                songs_list = ", ".join(songs_to_show)
+                for song in songs_to_show:
+                    output.append(f"   • {song}")
 
                 remaining = len(conn["songs"]) - 3
                 if remaining > 0:
-                    output.append(f"   • {songs_list} ... and {remaining} more")
-                else:
-                    output.append(f"   • {songs_list}")
+                    output.append(f"   ... and {remaining} more")
             else:
                 output.append("   • (Collaboration details unavailable)")
 
