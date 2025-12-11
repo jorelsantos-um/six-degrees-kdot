@@ -454,34 +454,47 @@ class SpotifyAPIClient:
         main_artist_name = main_artist_info["name"].lower()
         print(f"Main artist: {main_artist_info['name']}")
 
-        # Get artist's albums - ONLY their own albums, not guest appearances
-        all_albums = self.get_artist_albums(artist_id, limit=50, own_albums_only=True)
+        # Get ALL albums - both own albums AND guest appearances
+        all_albums = self.get_artist_albums(artist_id, limit=50, own_albums_only=False)
 
-        # Prioritize studio albums over singles
+        # Separate into own albums and guest appearances
+        own_albums = [album for album in all_albums if album.get('is_primary_artist', False)]
+        guest_albums = [album for album in all_albums if not album.get('is_primary_artist', False)]
+
+        # Prioritize studio albums over singles for own albums
         # Sort: albums first (by type), then by release date (oldest first for chronological order)
         type_priority = {"album": 0, "single": 1, "compilation": 2}
-        sorted_albums = sorted(
-            all_albums,
+        sorted_own_albums = sorted(
+            own_albums,
             key=lambda x: (type_priority.get(x['type'], 3), x.get('release_date', ''))
         )
 
-        # Take only the requested number of albums
-        albums = sorted_albums[:max_albums]
+        # Take requested number of own albums, plus all guest albums
+        albums_to_process = sorted_own_albums[:max_albums] + guest_albums
 
-        print(f"Found {len(all_albums)} total albums/singles")
-        print(f"Analyzing top {len(albums)} releases (prioritizing studio albums)")
+        print(f"Found {len(own_albums)} own albums, {len(guest_albums)} guest appearances")
+        print(f"Analyzing {len(sorted_own_albums[:max_albums])} own albums + {len(guest_albums)} guest albums")
 
         # Use normalized names as keys to avoid duplicates
         collaborators = {}
 
         # Process each album
-        for i, album in enumerate(albums, 1):
-            print(f"Processing album {i}/{len(albums)}: [{album['type']}] {album['name']} ({album.get('release_date', 'unknown')})")
+        for i, album in enumerate(albums_to_process, 1):
+            is_guest_album = not album.get('is_primary_artist', False)
+            album_label = "GUEST" if is_guest_album else album['type']
+            print(f"Processing album {i}/{len(albums_to_process)}: [{album_label}] {album['name']} ({album.get('release_date', 'unknown')})")
 
             try:
                 tracks = self.get_album_tracks(album["id"])
 
                 for track in tracks:
+                    # For guest albums, only process tracks where the main artist is actually on the track
+                    if is_guest_album:
+                        track_artist_ids = [artist["id"] for artist in track["artists"]]
+                        if artist_id not in track_artist_ids:
+                            # Main artist not on this track, skip it
+                            continue
+
                     # Check all artists on the track
                     for artist in track["artists"]:
                         # Skip if it's the main artist (by ID or name)
