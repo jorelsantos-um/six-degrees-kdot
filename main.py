@@ -38,37 +38,27 @@ class SixDegreesApp:
         """
         Initialize Spotify client and load/build network.
         """
-        print("\n" + "="*80)
-        print(" " * 20 + "SIX DEGREES OF KENDRICK LAMAR")
-        print("="*80)
-        print()
+        print("\n╔════════════════════════════════════════════════════════════╗")
+        print("║         Six Degrees of Kendrick Lamar                      ║")
+        print("╚════════════════════════════════════════════════════════════╝\n")
 
-        # Initialize Spotify client
-        print("Initializing Spotify client...")
+        # Initialize Spotify client (silently)
         try:
             self.client = get_spotify_client()
-            print("✓ Spotify client ready\n")
         except Exception as e:
-            print(f"✗ Error initializing Spotify client: {e}")
-            print("\nPlease ensure your .env file has valid credentials:")
-            print("  SPOTIFY_CLIENT_ID=your_client_id")
-            print("  SPOTIFY_CLIENT_SECRET=your_client_secret")
+            print(f"✗ Error: Could not connect to Spotify API")
+            print("  Please check your .env file has valid credentials\n")
             return False
 
         # Load or build network
-        print("Loading collaboration network...")
         self.network = CollaborationNetwork(self.client)
 
         if self.network.load_network(NETWORK_FILE):
-            print("✓ Network loaded successfully\n")
             stats = self.network.get_network_stats()
-            print(f"Network contains:")
-            print(f"  • {stats['total_artists']} artists")
-            print(f"  • {stats['total_collaborations']} collaborations")
-            print()
+            print(f"✓ Loaded network: {stats['total_artists']} artists, {stats['total_collaborations']} collaborations\n")
         else:
-            print("\n⚠ No saved network found. Building new network...")
-            print("This will take 10-15 minutes. Please be patient.\n")
+            print("⚠ No saved network found. Building new network...")
+            print("  This will take 10-15 minutes.\n")
 
             response = input("Build network now? (yes/no): ").strip().lower()
             if response not in ['yes', 'y']:
@@ -79,14 +69,13 @@ class SixDegreesApp:
                 # Build 2-degree network from Kendrick
                 self.network.build_network(KENDRICK_ID, depth=2, max_albums=15)
                 self.network.save_network(NETWORK_FILE)
-                print("\n✓ Network built and saved successfully\n")
+                print("\n✓ Network built successfully\n")
             except Exception as e:
                 print(f"\n✗ Error building network: {e}")
                 return False
 
         # Initialize path finder
         self.path_finder = PathFinder(self.network)
-        print("✓ Path finder ready\n")
 
         return True
 
@@ -100,12 +89,10 @@ class SixDegreesApp:
         Returns:
             Artist info dictionary or None
         """
-        print(f"\nSearching for '{artist_name}'...")
         artist_info = self.client.search_artist(artist_name)
 
         if not artist_info:
-            print(f"✗ Could not find artist: {artist_name}")
-            print("  Please check the spelling and try again.")
+            print(f"✗ Could not find '{artist_name}' - check spelling and try again\n")
             return None
 
         print(f"✓ Found: {artist_info['name']}")
@@ -119,34 +106,25 @@ class SixDegreesApp:
             artist_id: Spotify artist ID
             artist_name: Artist's name
         """
-        print(f"\nFinding connection to Kendrick Lamar...")
-
         # Check if artist is in network
         if not self.network.artist_in_network(artist_id):
-            print(f"\n⚠ {artist_name} is not in the current network.")
-            print("Attempting to expand network with 2-degree search...")
-            print("(This will add the artist + their collaborators + their collaborators' collaborators)")
-            print("Please wait, this may take a few minutes...")
+            print(f"⚠ {artist_name} not in network - expanding (2-3 min)...\n")
 
             try:
                 # Build a 2-degree network from the artist to find bridges
-                # This adds: Artist → Collaborators → Collaborators' Collaborators
                 initial_size = self.network.graph.number_of_nodes()
-
                 self.network.build_network(artist_id, depth=2, max_albums=15)
-
                 final_size = self.network.graph.number_of_nodes()
                 new_artists = final_size - initial_size
 
-                print(f"\n✓ Expanded network by {new_artists} artists")
+                print(f"✓ Added {new_artists} artists to network\n")
 
                 # Update saved network
                 self.network.save_network(NETWORK_FILE)
-                print("✓ Network updated and saved")
 
             except Exception as e:
-                print(f"✗ Error expanding network: {e}")
-                print("\nNo path that we know of.")
+                print(f"✗ Error: {e}")
+                print("No path that we know of.\n")
                 return
 
         # Find path
@@ -154,9 +132,9 @@ class SixDegreesApp:
 
         if path_info:
             # Display formatted path
-            print("\n" + self.path_finder.format_path_output(path_info))
+            print(self.path_finder.format_path_output(path_info))
         else:
-            print("\nNo path that we know of.")
+            print("No path that we know of.\n")
 
     def run(self):
         """
@@ -166,32 +144,23 @@ class SixDegreesApp:
         if not self.initialize():
             return
 
-        print("="*80)
-        print("\nWelcome! Enter any artist name to find their connection to Kendrick Lamar.")
-        print("Type 'quit' or 'exit' to leave.\n")
-        print("="*80)
-
         # Main loop
         while True:
             # Get user input
-            print("\n" + "-"*80)
-            artist_name = input("\nEnter artist name: ").strip()
+            artist_name = input("Enter artist name (or 'quit' to exit): ").strip()
 
             # Check for exit
             if artist_name.lower() in ['quit', 'exit', 'q']:
-                print("\nThanks for using Six Degrees of Kendrick Lamar!")
-                print("="*80)
+                print("\nThanks for using Six Degrees of Kendrick Lamar!\n")
                 break
 
             # Validate input
             if not artist_name:
-                print("Please enter an artist name.")
                 continue
 
             # Check if searching for Kendrick himself
             if artist_name.lower() in ['kendrick lamar', 'kendrick', 'k dot', 'k.dot', 'kdot']:
-                print("\n⚠ You searched for Kendrick Lamar!")
-                print("Please try searching for a different artist.")
+                print("⚠ Please search for a different artist\n")
                 continue
 
             # Search for artist
