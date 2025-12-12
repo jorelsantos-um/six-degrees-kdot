@@ -242,7 +242,85 @@ six-degrees-kdot/
 ```
 
 ## Data Sources
-- **Spotify Web API**: Artist information, albums, tracks, and collaboration data
+
+This project uses data from the Spotify Web API to collect information about artists, albums, tracks, and collaborations.
+
+| Data Source | URL | Description |
+|-------------|-----|-------------|
+| Spotify Web API | https://developer.spotify.com/documentation/web-api | Official Spotify REST API providing access to music catalog data including artists, albums, tracks, and audio features |
+
+**Authentication**: OAuth 2.0 Client Credentials flow
+**Base URL**: `https://api.spotify.com/v1/`
+
+## Data Access Techniques
+
+This project uses the following techniques to access and manage data:
+
+### 1. OAuth 2.0 Authentication
+- **Client Credentials flow** for application-level access
+- Access tokens are automatically refreshed when expired
+- Credentials stored securely in `.env` file (not committed to git)
+
+### 2. REST API Calls
+- HTTP GET requests to Spotify Web API endpoints
+- **Endpoints used**:
+  - `/v1/search` - Search for artists by name
+  - `/v1/artists/{id}` - Get artist metadata
+  - `/v1/artists/{id}/albums` - Get artist's discography
+  - `/v1/albums/{id}/tracks` - Get tracks from an album
+- JSON response parsing for all data
+- Error handling with retry logic for rate limits
+
+### 3. Caching Strategy
+- All API responses cached as **JSON files** in `data/` directory
+- **Cache key**: MD5 hash of the API endpoint URL
+- **Cache expiration**: 7 days (604800 seconds)
+- Cache hit avoids unnecessary API calls, improving performance
+- Cache miss triggers new API request and updates cache file
+- Example: `get_artist_albums()` checks cache before calling API
+
+### 4. Data Persistence
+- Network graph saved as **pickle file** (`collaboration_network.pkl`)
+- Allows instant loading without rebuilding 10-15 minute network
+- Graph contains all nodes, edges, and attributes in NetworkX format
+
+## Data Summary
+
+The application stores and processes the following data structures:
+
+### Artist Data (Nodes in Network Graph)
+- **id**: Spotify unique artist identifier (string)
+- **name**: Artist display name (string)
+- **popularity**: Spotify popularity score 0-100 (integer)
+- **genres**: List of associated genres (list of strings)
+- **followers**: Total follower count (integer, optional)
+
+### Album Data (Used for Collaboration Discovery)
+- **id**: Spotify unique album identifier (string)
+- **name**: Album title (string)
+- **release_date**: Album release date (string, YYYY-MM-DD)
+- **album_type**: Type of release - "album", "single", or "compilation" (string)
+- **total_tracks**: Number of tracks on album (integer)
+- **is_primary_artist**: Whether artist is primary owner vs. guest (boolean)
+
+### Track Data (Used to Identify Collaborations)
+- **id**: Spotify unique track identifier (string)
+- **name**: Track title (string)
+- **artists**: List of all artists credited on track (list of artist objects)
+- **duration_ms**: Track length in milliseconds (integer)
+- **track_number**: Position on album (integer)
+
+### Collaboration Data (Edges in Network Graph)
+- **source_artist**: Starting artist node ID (string)
+- **target_artist**: Ending artist node ID (string)
+- **songs**: List of track names they collaborated on (list of strings)
+- **weight**: Number of collaborations (integer, implicit from songs list length)
+
+### Network Graph Statistics
+- **total_artists**: Total number of artist nodes in graph (integer)
+- **total_collaborations**: Total number of collaboration edges (integer)
+- **average_collaborators**: Mean number of collaborators per artist (float)
+- **degrees_from_kendrick**: Maximum path length in network (integer)
 
 ## Course Information
 SI 507 Final Project - University of Michigan School of Information
