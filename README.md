@@ -245,4 +245,4 @@ six-degrees-kdot/
 - **Spotify Web API**: Artist information, albums, tracks, and collaboration data
 
 ## Course Information
-SI 507 Final Project - University of Michigan School of Information
+SI 507 Final Project
