@@ -483,6 +483,72 @@ class SpotifyAPIClient:
 
         return tracks
 
+    def get_albums_batch(self, album_ids: List[str]) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Get tracks for multiple albums in a single API call.
+
+        Spotify allows fetching up to 20 albums at once via /albums?ids=...
+
+        Args:
+            album_ids: List of Spotify album IDs (max 20)
+
+        Returns:
+            Dictionary mapping album_id to list of tracks
+
+        Raises:
+            SpotifyAPIError: If the API request fails
+        """
+        if not album_ids:
+            return {}
+
+        # Check cache for each album first
+        result = {}
+        uncached_ids = []
+
+        for album_id in album_ids:
+            cache_key = self._generate_cache_key(f"album_tracks_{album_id}")
+            cached_data = self._load_from_cache(cache_key)
+            if cached_data is not None:
+                result[album_id] = cached_data
+            else:
+                uncached_ids.append(album_id)
+
+        # If all were cached, return early
+        if not uncached_ids:
+            return result
+
+        # Batch fetch uncached albums (max 20 per request)
+        for i in range(0, len(uncached_ids), 20):
+            batch = uncached_ids[i:i + 20]
+            ids_param = ",".join(batch)
+
+            response = self._make_request("/albums", {"ids": ids_param})
+
+            for album in response.get("albums", []):
+                if album is None:
+                    continue
+
+                album_id = album["id"]
+                tracks = []
+
+                for track in album.get("tracks", {}).get("items", []):
+                    tracks.append({
+                        "id": track["id"],
+                        "name": track["name"],
+                        "artists": [
+                            {"id": artist["id"], "name": artist["name"]}
+                            for artist in track.get("artists", [])
+                        ]
+                    })
+
+                result[album_id] = tracks
+
+                # Cache each album's tracks
+                cache_key = self._generate_cache_key(f"album_tracks_{album_id}")
+                self._save_to_cache(cache_key, tracks)
+
+        return result
+
     def _parse_featured_artists(self, track_name: str) -> List[str]:
         """
         Extract featured artists from track name.
@@ -573,14 +639,18 @@ class SpotifyAPIClient:
         # Use normalized names as keys to avoid duplicates
         collaborators = {}
 
-        # Process each album
+        # Batch fetch all album tracks (much faster than one-by-one)
+        album_ids = [album["id"] for album in albums_to_process]
+        print(f"Batch fetching tracks for {len(album_ids)} albums...")
+        all_album_tracks = self.get_albums_batch(album_ids)
+
+        # Process each album's tracks
         for i, album in enumerate(albums_to_process, 1):
             is_guest_album = not album.get('is_primary_artist', False)
-            album_label = "GUEST" if is_guest_album else album['type']
-            print(f"Processing album {i}/{len(albums_to_process)}: [{album_label}] {album['name']} ({album.get('release_date', 'unknown')})")
+            album_id = album["id"]
 
             try:
-                tracks = self.get_album_tracks(album["id"])
+                tracks = all_album_tracks.get(album_id, [])
 
                 for track in tracks:
                     # For guest albums, only process tracks where the main artist is actually on the track
