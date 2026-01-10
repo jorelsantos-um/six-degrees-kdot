@@ -556,9 +556,6 @@ class SpotifyAPIClient:
                                 "tracks": [track["name"]]
                             }
 
-                # Rate limiting - be nice to the API
-                time.sleep(0.1)
-
             except SpotifyAPIError as e:
                 print(f"Error processing album {album['name']}: {e}")
                 continue
