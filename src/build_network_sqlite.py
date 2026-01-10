@@ -212,8 +212,8 @@ def main():
     print("=" * 70)
     print("Six Degrees of Kendrick Lamar - Network Builder (Parallel)")
     print("=" * 70)
-    print("\nThis will build a collaboration network starting from Kendrick Lamar.")
-    print("Estimated time: 1-2 minutes for depth 2, 10-15 minutes for depth 3.\n")
+    print("\nThis will build a 3-degree collaboration network starting from Kendrick Lamar.")
+    print("Estimated time: 10-15 minutes (with optimized parallel fetching).\n")
 
     # Initialize database
     db_path = Path(__file__).parent.parent / "data" / "collaboration_network.db"
@@ -264,7 +264,7 @@ def main():
         db=db,
         client=client,
         starting_artist_id=kendrick['id'],
-        depth=2,
+        depth=3,
         max_albums=15,
         max_workers=10  # 10 parallel threads
     )
