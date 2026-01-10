@@ -85,7 +85,8 @@ class RateLimiter:
 
 
 # Global rate limiter instance (shared across threads)
-_rate_limiter = RateLimiter(max_requests=100, window_seconds=30)
+# Conservative settings to avoid triggering Spotify's aggressive rate limiting
+_rate_limiter = RateLimiter(max_requests=50, window_seconds=30)
 
 
 def get_rate_limiter() -> RateLimiter:

@@ -260,13 +260,14 @@ def main():
     print(f"Found: {kendrick['name']} (ID: {kendrick['id']})")
 
     # Build the network with parallel processing
+    # Using 5 workers to be conservative with Spotify's rate limits
     build_network(
         db=db,
         client=client,
         starting_artist_id=kendrick['id'],
         depth=3,
         max_albums=15,
-        max_workers=10  # 10 parallel threads
+        max_workers=5  # Reduced from 10 to avoid rate limiting
     )
 
     print("Done! Your network is ready in the SQLite database.")
