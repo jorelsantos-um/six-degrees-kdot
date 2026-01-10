@@ -3,21 +3,110 @@ SQLite Network Builder for Six Degrees of Kendrick Lamar
 
 This script builds the artist collaboration network and stores it in SQLite.
 Run this once to populate the database, then use the Streamlit app to query it.
+
+Features:
+- Parallel processing using ThreadPoolExecutor
+- Smart rate limiting to maximize speed without hitting API limits
+- Full pagination to capture all artist collaborations
 """
 
 import sys
+import time
+import threading
 from pathlib import Path
-from typing import Set
+from typing import Set, Dict, Any, List, Tuple
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from data_fetcher import SpotifyAPIClient
+from data_fetcher import SpotifyAPIClient, get_rate_limiter
 from database import CollaborationDatabase
 
 
 # Kendrick Lamar's Spotify ID
 KENDRICK_ID = "2YZyLoL8N0Wb9xBt1NhZWg"
+
+# Thread-safe lock for database writes
+db_lock = threading.Lock()
+
+# Thread-safe sets for tracking progress
+processed_lock = threading.Lock()
+
+
+def process_single_artist(
+    artist_id: str,
+    client: SpotifyAPIClient,
+    db: CollaborationDatabase,
+    max_albums: int,
+    processed: Set[str]
+) -> Tuple[str, List[str], int]:
+    """
+    Process a single artist: fetch info, find collaborators, save to database.
+
+    Args:
+        artist_id: Spotify artist ID to process
+        client: SpotifyAPIClient instance
+        db: CollaborationDatabase instance
+        max_albums: Maximum albums to analyze
+        processed: Set of already processed artist IDs
+
+    Returns:
+        Tuple of (artist_name, list of collaborator IDs, collaborator count)
+    """
+    # Check if already processed
+    with processed_lock:
+        if artist_id in processed:
+            return ("", [], 0)
+        processed.add(artist_id)
+
+    try:
+        # Get artist info
+        artist_info = client._make_request(f"/artists/{artist_id}")
+        artist_name = artist_info['name']
+
+        # Add artist to database
+        with db_lock:
+            db.add_artist(
+                artist_id=artist_id,
+                name=artist_name,
+                popularity=artist_info.get('popularity', 0),
+                genres=artist_info.get('genres', [])
+            )
+
+        # Get collaborators
+        collaborators = client.get_artist_collaborators(artist_id, max_albums)
+
+        # Collect collaborator IDs for next level
+        collaborator_ids = []
+
+        # Add each collaborator to database
+        with db_lock:
+            for collab_key, collab_info in collaborators.items():
+                collab_id = collab_info.get('id')
+                collab_name = collab_info['name']
+
+                # Skip collaborators without IDs
+                if not collab_id:
+                    continue
+
+                # Add collaborator to database
+                db.add_artist(
+                    artist_id=collab_id,
+                    name=collab_name
+                )
+
+                # Add edges for each song
+                for song in collab_info['tracks']:
+                    db.add_collaboration(artist_id, collab_id, song)
+
+                collaborator_ids.append(collab_id)
+
+        return (artist_name, collaborator_ids, len(collaborators))
+
+    except Exception as e:
+        print(f"  Error processing artist {artist_id}: {e}")
+        return ("", [], 0)
 
 
 def build_network(
@@ -25,10 +114,11 @@ def build_network(
     client: SpotifyAPIClient,
     starting_artist_id: str = KENDRICK_ID,
     depth: int = 2,
-    max_albums: int = 15
+    max_albums: int = 15,
+    max_workers: int = 10
 ) -> None:
     """
-    Build the collaboration network using BFS from a starting artist.
+    Build the collaboration network using parallel BFS from a starting artist.
 
     Args:
         db: CollaborationDatabase instance
@@ -36,81 +126,81 @@ def build_network(
         starting_artist_id: Artist ID to start from (default: Kendrick Lamar)
         depth: How many degrees of separation to build
         max_albums: Maximum albums to analyze per artist
+        max_workers: Number of parallel threads to use
     """
     print(f"\n{'='*70}")
     print(f"Building {depth}-degree network from starting artist...")
+    print(f"Using {max_workers} parallel workers")
     print(f"{'='*70}")
 
-    # Track processed artists
+    start_time = time.time()
+
+    # Track processed artists (thread-safe via processed_lock)
     processed: Set[str] = set()
 
     # Current level of artists to process
     current_level = {starting_artist_id}
 
     for level in range(depth):
-        print(f"\n--- Processing Degree {level + 1} ({len(current_level)} artists) ---")
+        level_start = time.time()
+        artists_to_process = [aid for aid in current_level if aid not in processed]
+
+        print(f"\n--- Processing Degree {level + 1} ({len(artists_to_process)} artists) ---")
+
+        if not artists_to_process:
+            print("  No new artists to process at this level.")
+            continue
 
         next_level: Set[str] = set()
+        completed_count = 0
 
-        for artist_id in current_level:
-            if artist_id in processed:
-                continue
+        # Process artists in parallel
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks
+            future_to_artist = {
+                executor.submit(
+                    process_single_artist,
+                    artist_id,
+                    client,
+                    db,
+                    max_albums,
+                    processed
+                ): artist_id
+                for artist_id in artists_to_process
+            }
 
-            try:
-                # Get artist info
-                print(f"\nFetching artist {artist_id}...")
-                artist_info = client._make_request(f"/artists/{artist_id}")
-                artist_name = artist_info['name']
-                print(f"Processing: {artist_name}")
+            # Collect results as they complete
+            for future in as_completed(future_to_artist):
+                artist_id = future_to_artist[future]
+                try:
+                    artist_name, collaborator_ids, collab_count = future.result()
+                    if artist_name:
+                        completed_count += 1
+                        # Add collaborators to next level
+                        next_level.update(collaborator_ids)
 
-                # Add artist to database
-                db.add_artist(
-                    artist_id=artist_id,
-                    name=artist_name,
-                    popularity=artist_info.get('popularity', 0),
-                    genres=artist_info.get('genres', [])
-                )
+                        # Progress update every 10 artists
+                        if completed_count % 10 == 0:
+                            rate_stats = get_rate_limiter().get_stats()
+                            print(f"  Processed {completed_count}/{len(artists_to_process)} artists "
+                                  f"(API: {rate_stats['requests_in_window']}/{rate_stats['max_requests']} req/30s)")
 
-                # Get collaborators
-                collaborators = client.get_artist_collaborators(artist_id, max_albums)
-                print(f"  Found {len(collaborators)} collaborators")
+                except Exception as e:
+                    print(f"  Error with artist {artist_id}: {e}")
 
-                # Add each collaborator
-                for collab_key, collab_info in collaborators.items():
-                    collab_id = collab_info.get('id')
-                    collab_name = collab_info['name']
+        level_time = time.time() - level_start
+        print(f"  Level {level + 1} completed in {level_time:.1f} seconds")
+        print(f"  Found {len(next_level)} potential artists for next level")
 
-                    # Skip collaborators without IDs
-                    if not collab_id:
-                        continue
-
-                    # Add collaborator to database
-                    db.add_artist(
-                        artist_id=collab_id,
-                        name=collab_name
-                    )
-
-                    # Add edges for each song
-                    for song in collab_info['tracks']:
-                        db.add_collaboration(artist_id, collab_id, song)
-
-                    # Queue for next level
-                    next_level.add(collab_id)
-
-                processed.add(artist_id)
-
-            except Exception as e:
-                print(f"  Error processing artist {artist_id}: {e}")
-                processed.add(artist_id)
-                continue
-
-        # Move to next level
+        # Move to next level (excluding already processed)
         current_level = next_level - processed
+
+    total_time = time.time() - start_time
 
     # Print final stats
     stats = db.get_stats()
     print(f"\n{'='*70}")
-    print(f"Network built successfully!")
+    print(f"Network built successfully in {total_time:.1f} seconds!")
     print(f"  Total artists: {stats['total_artists']}")
     print(f"  Total collaborations: {stats['total_collaborations']}")
     print(f"  Total songs: {stats['total_songs']}")
@@ -120,10 +210,10 @@ def build_network(
 def main():
     """Main entry point for building the network."""
     print("=" * 70)
-    print("Six Degrees of Kendrick Lamar - Network Builder")
+    print("Six Degrees of Kendrick Lamar - Network Builder (Parallel)")
     print("=" * 70)
     print("\nThis will build a collaboration network starting from Kendrick Lamar.")
-    print("Estimated time: 10-15 minutes for a 2-degree network.\n")
+    print("Estimated time: 1-2 minutes for depth 2, 10-15 minutes for depth 3.\n")
 
     # Initialize database
     db_path = Path(__file__).parent.parent / "data" / "collaboration_network.db"
@@ -169,13 +259,14 @@ def main():
 
     print(f"Found: {kendrick['name']} (ID: {kendrick['id']})")
 
-    # Build the network
+    # Build the network with parallel processing
     build_network(
         db=db,
         client=client,
         starting_artist_id=kendrick['id'],
         depth=2,
-        max_albums=15
+        max_albums=15,
+        max_workers=10  # 10 parallel threads
     )
 
     print("Done! Your network is ready in the SQLite database.")

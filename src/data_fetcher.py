@@ -10,12 +10,87 @@ import os
 import json
 import time
 import hashlib
+import threading
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
+from collections import deque
 
 import requests
 from dotenv import load_dotenv
+
+
+class RateLimiter:
+    """
+    Thread-safe rate limiter for API requests.
+
+    Tracks requests in a sliding window and pauses when approaching limits.
+    Spotify allows ~100-180 requests per 30 seconds.
+    """
+
+    def __init__(self, max_requests: int = 100, window_seconds: int = 30):
+        """
+        Initialize rate limiter.
+
+        Args:
+            max_requests: Maximum requests allowed in the time window
+            window_seconds: Time window in seconds
+        """
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self.requests = deque()  # Timestamps of recent requests
+        self.lock = threading.Lock()
+
+    def acquire(self):
+        """
+        Acquire permission to make a request.
+        Blocks if rate limit would be exceeded.
+        """
+        with self.lock:
+            now = time.time()
+
+            # Remove requests outside the window
+            while self.requests and self.requests[0] < now - self.window_seconds:
+                self.requests.popleft()
+
+            # If at limit, wait until oldest request expires
+            if len(self.requests) >= self.max_requests:
+                sleep_time = self.requests[0] - (now - self.window_seconds) + 0.1
+                if sleep_time > 0:
+                    # Release lock while sleeping
+                    self.lock.release()
+                    try:
+                        time.sleep(sleep_time)
+                    finally:
+                        self.lock.acquire()
+                    # Clean up again after sleeping
+                    now = time.time()
+                    while self.requests and self.requests[0] < now - self.window_seconds:
+                        self.requests.popleft()
+
+            # Record this request
+            self.requests.append(time.time())
+
+    def get_stats(self) -> Dict:
+        """Get current rate limiter statistics."""
+        with self.lock:
+            now = time.time()
+            # Count requests in current window
+            recent = sum(1 for t in self.requests if t > now - self.window_seconds)
+            return {
+                "requests_in_window": recent,
+                "max_requests": self.max_requests,
+                "window_seconds": self.window_seconds
+            }
+
+
+# Global rate limiter instance (shared across threads)
+_rate_limiter = RateLimiter(max_requests=100, window_seconds=30)
+
+
+def get_rate_limiter() -> RateLimiter:
+    """Get the global rate limiter instance."""
+    return _rate_limiter
 
 
 # Custom Exceptions
@@ -129,6 +204,9 @@ class SpotifyAPIClient:
 
         for attempt in range(retries):
             try:
+                # Acquire rate limit permission before making request
+                _rate_limiter.acquire()
+
                 response = requests.get(url, headers=headers, params=params)
 
                 # Handle rate limiting (429)
