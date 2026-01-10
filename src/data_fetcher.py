@@ -10,12 +10,87 @@ import os
 import json
 import time
 import hashlib
+import threading
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
+from collections import deque
 
 import requests
 from dotenv import load_dotenv
+
+
+class RateLimiter:
+    """
+    Thread-safe rate limiter for API requests.
+
+    Tracks requests in a sliding window and pauses when approaching limits.
+    Spotify allows ~100-180 requests per 30 seconds.
+    """
+
+    def __init__(self, max_requests: int = 100, window_seconds: int = 30):
+        """
+        Initialize rate limiter.
+
+        Args:
+            max_requests: Maximum requests allowed in the time window
+            window_seconds: Time window in seconds
+        """
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self.requests = deque()  # Timestamps of recent requests
+        self.lock = threading.Lock()
+
+    def acquire(self):
+        """
+        Acquire permission to make a request.
+        Blocks if rate limit would be exceeded.
+        """
+        with self.lock:
+            now = time.time()
+
+            # Remove requests outside the window
+            while self.requests and self.requests[0] < now - self.window_seconds:
+                self.requests.popleft()
+
+            # If at limit, wait until oldest request expires
+            if len(self.requests) >= self.max_requests:
+                sleep_time = self.requests[0] - (now - self.window_seconds) + 0.1
+                if sleep_time > 0:
+                    # Release lock while sleeping
+                    self.lock.release()
+                    try:
+                        time.sleep(sleep_time)
+                    finally:
+                        self.lock.acquire()
+                    # Clean up again after sleeping
+                    now = time.time()
+                    while self.requests and self.requests[0] < now - self.window_seconds:
+                        self.requests.popleft()
+
+            # Record this request
+            self.requests.append(time.time())
+
+    def get_stats(self) -> Dict:
+        """Get current rate limiter statistics."""
+        with self.lock:
+            now = time.time()
+            # Count requests in current window
+            recent = sum(1 for t in self.requests if t > now - self.window_seconds)
+            return {
+                "requests_in_window": recent,
+                "max_requests": self.max_requests,
+                "window_seconds": self.window_seconds
+            }
+
+
+# Global rate limiter instance (shared across threads)
+_rate_limiter = RateLimiter(max_requests=100, window_seconds=30)
+
+
+def get_rate_limiter() -> RateLimiter:
+    """Get the global rate limiter instance."""
+    return _rate_limiter
 
 
 # Custom Exceptions
@@ -129,6 +204,9 @@ class SpotifyAPIClient:
 
         for attempt in range(retries):
             try:
+                # Acquire rate limit permission before making request
+                _rate_limiter.acquire()
+
                 response = requests.get(url, headers=headers, params=params)
 
                 # Handle rate limiting (429)
@@ -298,11 +376,11 @@ class SpotifyAPIClient:
 
     def get_artist_albums(self, artist_id: str, limit: int = 50, own_albums_only: bool = False) -> List[Dict[str, Any]]:
         """
-        Get all albums for an artist.
+        Get all albums for an artist with full pagination.
 
         Args:
             artist_id: Spotify artist ID
-            limit: Maximum number of albums to fetch
+            limit: Number of albums to fetch per page (max 50)
             own_albums_only: If True, only return albums where the artist is the primary artist
 
         Returns:
@@ -312,38 +390,55 @@ class SpotifyAPIClient:
             SpotifyAPIError: If the API request fails
         """
         # Check cache first
-        cache_key = self._generate_cache_key(f"artist_albums_{artist_id}_{own_albums_only}")
+        cache_key = self._generate_cache_key(f"artist_albums_{artist_id}_{own_albums_only}_paginated")
         cached_data = self._load_from_cache(cache_key)
         if cached_data is not None:
             return cached_data
 
-        # Make API request
-        params = {
-            "include_groups": "album,single" if own_albums_only else "album,single,appears_on",
-            "limit": limit
-        }
-
-        response = self._make_request(f"/artists/{artist_id}/albums", params)
-
         albums = []
-        for album in response.get("items", []):
-            # Get album artists to verify ownership
-            album_artists = album.get("artists", [])
-            album_artist_ids = [artist["id"] for artist in album_artists]
+        offset = 0
+        page_size = min(limit, 50)  # Spotify max is 50 per request
+        include_groups = "album,single" if own_albums_only else "album,single,appears_on"
 
-            # If own_albums_only, skip if this artist is not the primary artist (first in list)
-            if own_albums_only:
-                if not album_artists or album_artists[0]["id"] != artist_id:
-                    continue
+        # Paginate through all albums
+        while True:
+            params = {
+                "include_groups": include_groups,
+                "limit": page_size,
+                "offset": offset
+            }
 
-            albums.append({
-                "id": album["id"],
-                "name": album["name"],
-                "release_date": album.get("release_date", ""),
-                "type": album.get("album_type", ""),
-                "total_tracks": album.get("total_tracks", 0),
-                "is_primary_artist": album_artists[0]["id"] == artist_id if album_artists else False
-            })
+            response = self._make_request(f"/artists/{artist_id}/albums", params)
+            items = response.get("items", [])
+
+            if not items:
+                break  # No more albums
+
+            for album in items:
+                # Get album artists to verify ownership
+                album_artists = album.get("artists", [])
+
+                # If own_albums_only, skip if this artist is not the primary artist (first in list)
+                if own_albums_only:
+                    if not album_artists or album_artists[0]["id"] != artist_id:
+                        continue
+
+                albums.append({
+                    "id": album["id"],
+                    "name": album["name"],
+                    "release_date": album.get("release_date", ""),
+                    "type": album.get("album_type", ""),
+                    "total_tracks": album.get("total_tracks", 0),
+                    "is_primary_artist": album_artists[0]["id"] == artist_id if album_artists else False
+                })
+
+            # Check if we've fetched all pages
+            if len(items) < page_size:
+                break  # Last page
+
+            offset += page_size
+
+        print(f"  Fetched {len(albums)} total albums/appearances (paginated)")
 
         # Cache the result
         self._save_to_cache(cache_key, albums)
@@ -387,6 +482,72 @@ class SpotifyAPIClient:
         self._save_to_cache(cache_key, tracks)
 
         return tracks
+
+    def get_albums_batch(self, album_ids: List[str]) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Get tracks for multiple albums in a single API call.
+
+        Spotify allows fetching up to 20 albums at once via /albums?ids=...
+
+        Args:
+            album_ids: List of Spotify album IDs (max 20)
+
+        Returns:
+            Dictionary mapping album_id to list of tracks
+
+        Raises:
+            SpotifyAPIError: If the API request fails
+        """
+        if not album_ids:
+            return {}
+
+        # Check cache for each album first
+        result = {}
+        uncached_ids = []
+
+        for album_id in album_ids:
+            cache_key = self._generate_cache_key(f"album_tracks_{album_id}")
+            cached_data = self._load_from_cache(cache_key)
+            if cached_data is not None:
+                result[album_id] = cached_data
+            else:
+                uncached_ids.append(album_id)
+
+        # If all were cached, return early
+        if not uncached_ids:
+            return result
+
+        # Batch fetch uncached albums (max 20 per request)
+        for i in range(0, len(uncached_ids), 20):
+            batch = uncached_ids[i:i + 20]
+            ids_param = ",".join(batch)
+
+            response = self._make_request("/albums", {"ids": ids_param})
+
+            for album in response.get("albums", []):
+                if album is None:
+                    continue
+
+                album_id = album["id"]
+                tracks = []
+
+                for track in album.get("tracks", {}).get("items", []):
+                    tracks.append({
+                        "id": track["id"],
+                        "name": track["name"],
+                        "artists": [
+                            {"id": artist["id"], "name": artist["name"]}
+                            for artist in track.get("artists", [])
+                        ]
+                    })
+
+                result[album_id] = tracks
+
+                # Cache each album's tracks
+                cache_key = self._generate_cache_key(f"album_tracks_{album_id}")
+                self._save_to_cache(cache_key, tracks)
+
+        return result
 
     def _parse_featured_artists(self, track_name: str) -> List[str]:
         """
@@ -478,14 +639,18 @@ class SpotifyAPIClient:
         # Use normalized names as keys to avoid duplicates
         collaborators = {}
 
-        # Process each album
+        # Batch fetch all album tracks (much faster than one-by-one)
+        album_ids = [album["id"] for album in albums_to_process]
+        print(f"Batch fetching tracks for {len(album_ids)} albums...")
+        all_album_tracks = self.get_albums_batch(album_ids)
+
+        # Process each album's tracks
         for i, album in enumerate(albums_to_process, 1):
             is_guest_album = not album.get('is_primary_artist', False)
-            album_label = "GUEST" if is_guest_album else album['type']
-            print(f"Processing album {i}/{len(albums_to_process)}: [{album_label}] {album['name']} ({album.get('release_date', 'unknown')})")
+            album_id = album["id"]
 
             try:
-                tracks = self.get_album_tracks(album["id"])
+                tracks = all_album_tracks.get(album_id, [])
 
                 for track in tracks:
                     # For guest albums, only process tracks where the main artist is actually on the track
@@ -538,9 +703,6 @@ class SpotifyAPIClient:
                                 "count": 1,
                                 "tracks": [track["name"]]
                             }
-
-                # Rate limiting - be nice to the API
-                time.sleep(0.1)
 
             except SpotifyAPIError as e:
                 print(f"Error processing album {album['name']}: {e}")
