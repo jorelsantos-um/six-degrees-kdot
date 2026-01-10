@@ -298,11 +298,11 @@ class SpotifyAPIClient:
 
     def get_artist_albums(self, artist_id: str, limit: int = 50, own_albums_only: bool = False) -> List[Dict[str, Any]]:
         """
-        Get all albums for an artist.
+        Get all albums for an artist with full pagination.
 
         Args:
             artist_id: Spotify artist ID
-            limit: Maximum number of albums to fetch
+            limit: Number of albums to fetch per page (max 50)
             own_albums_only: If True, only return albums where the artist is the primary artist
 
         Returns:
@@ -312,38 +312,55 @@ class SpotifyAPIClient:
             SpotifyAPIError: If the API request fails
         """
         # Check cache first
-        cache_key = self._generate_cache_key(f"artist_albums_{artist_id}_{own_albums_only}")
+        cache_key = self._generate_cache_key(f"artist_albums_{artist_id}_{own_albums_only}_paginated")
         cached_data = self._load_from_cache(cache_key)
         if cached_data is not None:
             return cached_data
 
-        # Make API request
-        params = {
-            "include_groups": "album,single" if own_albums_only else "album,single,appears_on",
-            "limit": limit
-        }
-
-        response = self._make_request(f"/artists/{artist_id}/albums", params)
-
         albums = []
-        for album in response.get("items", []):
-            # Get album artists to verify ownership
-            album_artists = album.get("artists", [])
-            album_artist_ids = [artist["id"] for artist in album_artists]
+        offset = 0
+        page_size = min(limit, 50)  # Spotify max is 50 per request
+        include_groups = "album,single" if own_albums_only else "album,single,appears_on"
 
-            # If own_albums_only, skip if this artist is not the primary artist (first in list)
-            if own_albums_only:
-                if not album_artists or album_artists[0]["id"] != artist_id:
-                    continue
+        # Paginate through all albums
+        while True:
+            params = {
+                "include_groups": include_groups,
+                "limit": page_size,
+                "offset": offset
+            }
 
-            albums.append({
-                "id": album["id"],
-                "name": album["name"],
-                "release_date": album.get("release_date", ""),
-                "type": album.get("album_type", ""),
-                "total_tracks": album.get("total_tracks", 0),
-                "is_primary_artist": album_artists[0]["id"] == artist_id if album_artists else False
-            })
+            response = self._make_request(f"/artists/{artist_id}/albums", params)
+            items = response.get("items", [])
+
+            if not items:
+                break  # No more albums
+
+            for album in items:
+                # Get album artists to verify ownership
+                album_artists = album.get("artists", [])
+
+                # If own_albums_only, skip if this artist is not the primary artist (first in list)
+                if own_albums_only:
+                    if not album_artists or album_artists[0]["id"] != artist_id:
+                        continue
+
+                albums.append({
+                    "id": album["id"],
+                    "name": album["name"],
+                    "release_date": album.get("release_date", ""),
+                    "type": album.get("album_type", ""),
+                    "total_tracks": album.get("total_tracks", 0),
+                    "is_primary_artist": album_artists[0]["id"] == artist_id if album_artists else False
+                })
+
+            # Check if we've fetched all pages
+            if len(items) < page_size:
+                break  # Last page
+
+            offset += page_size
+
+        print(f"  Fetched {len(albums)} total albums/appearances (paginated)")
 
         # Cache the result
         self._save_to_cache(cache_key, albums)
