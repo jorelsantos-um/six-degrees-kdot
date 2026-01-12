@@ -85,7 +85,8 @@ class RateLimiter:
 
 
 # Global rate limiter instance (shared across threads)
-_rate_limiter = RateLimiter(max_requests=100, window_seconds=30)
+# Conservative settings to avoid triggering Spotify's aggressive rate limiting
+_rate_limiter = RateLimiter(max_requests=50, window_seconds=30)
 
 
 def get_rate_limiter() -> RateLimiter:
@@ -374,14 +375,15 @@ class SpotifyAPIClient:
 
         return artist_data
 
-    def get_artist_albums(self, artist_id: str, limit: int = 50, own_albums_only: bool = False) -> List[Dict[str, Any]]:
+    def get_artist_albums(self, artist_id: str, limit: int = 50, own_albums_only: bool = False, max_total: int = 100) -> List[Dict[str, Any]]:
         """
-        Get all albums for an artist with full pagination.
+        Get albums for an artist with pagination, capped at max_total.
 
         Args:
             artist_id: Spotify artist ID
             limit: Number of albums to fetch per page (max 50)
             own_albums_only: If True, only return albums where the artist is the primary artist
+            max_total: Maximum total albums to return (prevents excessive API calls)
 
         Returns:
             List of album dictionaries with id, name, and release_date
@@ -390,7 +392,7 @@ class SpotifyAPIClient:
             SpotifyAPIError: If the API request fails
         """
         # Check cache first
-        cache_key = self._generate_cache_key(f"artist_albums_{artist_id}_{own_albums_only}_paginated")
+        cache_key = self._generate_cache_key(f"artist_albums_{artist_id}_{own_albums_only}_max{max_total}")
         cached_data = self._load_from_cache(cache_key)
         if cached_data is not None:
             return cached_data
@@ -400,8 +402,8 @@ class SpotifyAPIClient:
         page_size = min(limit, 50)  # Spotify max is 50 per request
         include_groups = "album,single" if own_albums_only else "album,single,appears_on"
 
-        # Paginate through all albums
-        while True:
+        # Paginate through albums, but stop at max_total
+        while len(albums) < max_total:
             params = {
                 "include_groups": include_groups,
                 "limit": page_size,
@@ -415,6 +417,9 @@ class SpotifyAPIClient:
                 break  # No more albums
 
             for album in items:
+                if len(albums) >= max_total:
+                    break  # Hit the cap
+
                 # Get album artists to verify ownership
                 album_artists = album.get("artists", [])
 
@@ -432,13 +437,13 @@ class SpotifyAPIClient:
                     "is_primary_artist": album_artists[0]["id"] == artist_id if album_artists else False
                 })
 
-            # Check if we've fetched all pages
-            if len(items) < page_size:
-                break  # Last page
+            # Check if we've fetched all pages or hit the cap
+            if len(items) < page_size or len(albums) >= max_total:
+                break  # Last page or hit cap
 
             offset += page_size
 
-        print(f"  Fetched {len(albums)} total albums/appearances (paginated)")
+        print(f"  Fetched {len(albums)} albums (capped at {max_total})")
 
         # Cache the result
         self._save_to_cache(cache_key, albums)

@@ -212,8 +212,8 @@ def main():
     print("=" * 70)
     print("Six Degrees of Kendrick Lamar - Network Builder (Parallel)")
     print("=" * 70)
-    print("\nThis will build a 3-degree collaboration network starting from Kendrick Lamar.")
-    print("Estimated time: 10-15 minutes (with optimized parallel fetching).\n")
+    print("\nThis will build a 2-degree collaboration network starting from Kendrick Lamar.")
+    print("Estimated time: 1-2 minutes (with optimized parallel fetching).\n")
 
     # Initialize database
     db_path = Path(__file__).parent.parent / "data" / "collaboration_network.db"
@@ -260,13 +260,14 @@ def main():
     print(f"Found: {kendrick['name']} (ID: {kendrick['id']})")
 
     # Build the network with parallel processing
+    # Using 5 workers to be conservative with Spotify's rate limits
     build_network(
         db=db,
         client=client,
         starting_artist_id=kendrick['id'],
-        depth=3,
+        depth=2,
         max_albums=15,
-        max_workers=10  # 10 parallel threads
+        max_workers=5  # Reduced from 10 to avoid rate limiting
     )
 
     print("Done! Your network is ready in the SQLite database.")
