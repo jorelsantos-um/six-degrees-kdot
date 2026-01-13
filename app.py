@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from database import CollaborationDatabase
 from path_finder_sqlite import PathFinder, KENDRICK_ID
+from data_fetcher import SpotifyAPIClient, AuthenticationError
 
 
 # Page configuration
@@ -36,6 +37,54 @@ def load_database():
 def load_path_finder(_db):
     """Load the path finder (cached)."""
     return PathFinder(_db)
+
+
+@st.cache_resource
+def load_spotify_client():
+    """Load Spotify API client (cached). Returns None if credentials not available."""
+    try:
+        return SpotifyAPIClient()
+    except AuthenticationError:
+        return None
+
+
+def search_track_preview(song_name: str, artist_names: list, spotify_client) -> str:
+    """
+    Search for a track on Spotify and return its preview URL.
+
+    Args:
+        song_name: Name of the song
+        artist_names: List of artist names involved
+        spotify_client: SpotifyAPIClient instance
+
+    Returns:
+        Preview URL string or None if not found
+    """
+    if not spotify_client:
+        return None
+
+    try:
+        # Build search query with song and artists
+        query = f"{song_name} {' '.join(artist_names)}"
+
+        params = {
+            "q": query,
+            "type": "track",
+            "limit": 1
+        }
+
+        response = spotify_client._make_request("/search", params)
+        tracks = response.get("tracks", {}).get("items", [])
+
+        if tracks:
+            track = tracks[0]
+            return track.get("preview_url")
+
+    except Exception as e:
+        # Silently fail if preview not available
+        return None
+
+    return None
 
 
 def get_artist_image_url(artist_name: str) -> str:
@@ -66,7 +115,7 @@ def display_artist_card(artist_name: str, artist_id: str):
     """, unsafe_allow_html=True)
 
 
-def display_path(connection: dict):
+def display_path(connection: dict, spotify_client=None):
     """Display the connection path with artist cards and songs."""
     degrees = connection['degrees']
 
@@ -95,6 +144,8 @@ def display_path(connection: dict):
             # Find the connection between this artist and the next
             conn = connections[i]
             songs = conn['songs']
+            from_artist = conn['from']['name']
+            to_artist = conn['to']['name']
 
             # Arrow and songs container
             st.markdown(f"""
@@ -106,9 +157,26 @@ def display_path(connection: dict):
                         </div>
             """, unsafe_allow_html=True)
 
-            # Display songs
-            for song in songs[:3]:  # Show first 3 songs
+            # Display songs with preview players
+            songs_to_show = songs[:3]  # Show first 3 songs
+
+            for song in songs_to_show:
+                # Try to get preview URL if Spotify client is available
+                preview_url = None
+                if spotify_client:
+                    preview_url = search_track_preview(song, [from_artist, to_artist], spotify_client)
+
+                # Display song name
                 st.markdown(f"**•** {song}")
+
+                # Add preview player if available
+                if preview_url:
+                    st.markdown(f"""
+                        <audio controls style="width: 100%; margin: 0.5rem 0 1rem 0;">
+                            <source src="{preview_url}" type="audio/mpeg">
+                            Your browser does not support the audio element.
+                        </audio>
+                    """, unsafe_allow_html=True)
 
             if len(songs) > 3:
                 st.markdown(f"*...and {len(songs) - 3} more*")
@@ -166,6 +234,9 @@ def main():
         st.error("Database not found. Please run the network builder first.")
         st.code("python3 src/build_network_sqlite.py", language="bash")
         return
+
+    # Load Spotify client for preview players (optional)
+    spotify_client = load_spotify_client()
 
     # Search input with autocomplete
     artist_name = st.text_input(
@@ -226,7 +297,7 @@ def main():
             connection = path_finder.find_connection(artist['id'], KENDRICK_ID)
 
             if connection:
-                display_path(connection)
+                display_path(connection, spotify_client)
             else:
                 st.error("No connection found.")
                 st.markdown(f"*{artist['name']} doesn't have a path to Kendrick Lamar in the current network.*")
