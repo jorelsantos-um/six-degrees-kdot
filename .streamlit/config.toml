@@ -1,6 +1,7 @@
 [theme]
 base = "dark"
-primaryColor = "#FF4B4B"
-backgroundColor = "#0E1117"
-secondaryBackgroundColor = "#262730"
-textColor = "#FAFAFA"
+primaryColor = "#DC143C"  # Kendrick DAMN. red
+backgroundColor = "#0A0A0A"  # Deep black
+secondaryBackgroundColor = "#1A1A1A"  # Subtle dark gray
+textColor = "#F5F5F5"  # Off-white
+font = "sans serif"

@@ -77,9 +77,47 @@ def display_path(connection: dict):
 
 
 def main():
+    # Custom CSS for Kendrick aesthetic
+    st.markdown("""
+        <style>
+        /* Main title styling */
+        h1 {
+            font-weight: 900;
+            letter-spacing: -0.02em;
+            margin-bottom: 0.5rem;
+        }
+
+        /* Clean input styling */
+        .stTextInput input {
+            border-radius: 8px;
+            font-size: 1.1rem;
+            padding: 0.75rem;
+        }
+
+        /* Button styling */
+        .stButton button {
+            border-radius: 8px;
+            font-weight: 600;
+            padding: 0.6rem 2rem;
+            transition: all 0.2s;
+        }
+
+        /* Kendrick aesthetic accents */
+        .stMarkdown {
+            line-height: 1.6;
+        }
+
+        /* Clean card styling */
+        .element-container {
+            margin-bottom: 1rem;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
     # Title
     st.title("Six Degrees of Kendrick Lamar")
     st.markdown("*Find the collaboration path between any artist and Kendrick Lamar*")
+    st.markdown("")
 
     # Load database
     db = load_database()
@@ -88,12 +126,6 @@ def main():
         st.error("Database not found. Please run the network builder first.")
         st.code("python3 src/build_network_sqlite.py", language="bash")
         return
-
-    # Display network stats
-    stats = db.get_stats()
-    st.markdown(f"🎧 **Searching {stats['total_artists']:,} artists** in the network")
-
-    st.markdown("---")
 
     # Search input
     artist_name = st.text_input(
