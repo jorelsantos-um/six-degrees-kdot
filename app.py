@@ -127,43 +127,54 @@ def main():
         st.code("python3 src/build_network_sqlite.py", language="bash")
         return
 
-    # Search input
+    # Search input with autocomplete
     artist_name = st.text_input(
         "Enter an artist name:",
-        placeholder="e.g., Drake, SZA, Taylor Swift..."
+        placeholder="Start typing an artist name...",
+        key="artist_search"
     )
 
+    # Show autocomplete suggestions as user types
+    selected_artist = None
+    if artist_name and len(artist_name) >= 2:
+        suggestions = db.search_artists(artist_name, limit=8)
+
+        if suggestions:
+            st.markdown("**Suggestions:**")
+            cols = st.columns(2)
+            for idx, suggestion in enumerate(suggestions):
+                col = cols[idx % 2]
+                with col:
+                    if st.button(
+                        f"🎤 {suggestion['name']}",
+                        key=f"suggestion_{suggestion['id']}",
+                        use_container_width=True
+                    ):
+                        selected_artist = suggestion
+
+    st.markdown("")
+
     # Search button
-    if st.button("Find Connection", type="primary") or artist_name:
-        if not artist_name:
+    search_clicked = st.button("Find Connection", type="primary", use_container_width=True)
+
+    if search_clicked or selected_artist:
+        # Determine which artist to search for
+        if selected_artist:
+            artist = selected_artist
+        elif artist_name:
+            with st.spinner(f"Searching for {artist_name}..."):
+                # Try exact match first
+                artist = db.get_artist_by_name(artist_name)
+
+                if not artist:
+                    st.error(f"Artist '{artist_name}' not found.")
+                    st.info("Please select an artist from the suggestions above, or try a different search.")
+                    return
+        else:
             st.warning("Please enter an artist name.")
             return
 
-        with st.spinner(f"Searching for {artist_name}..."):
-            # Try exact match first
-            artist = db.get_artist_by_name(artist_name)
-
-            if not artist:
-                # Try partial search
-                similar_artists = db.search_artists(artist_name, limit=5)
-
-                if similar_artists:
-                    st.warning(f"Artist '{artist_name}' not found exactly. Did you mean:")
-
-                    # Show suggestions as buttons
-                    for similar in similar_artists:
-                        if st.button(f"🎤 {similar['name']}", key=similar['id']):
-                            artist = similar
-                            break
-
-                    if not artist:
-                        st.info("Click on an artist above to find their connection.")
-                        return
-                else:
-                    st.error(f"Artist '{artist_name}' not found in network.")
-                    st.markdown("*This artist may not have collaborated with anyone in Kendrick's network.*")
-                    return
-
+        with st.spinner(f"Finding connection to Kendrick..."):
             # Check if it's Kendrick himself
             if artist['id'] == KENDRICK_ID:
                 st.balloons()
