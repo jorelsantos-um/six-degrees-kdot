@@ -38,8 +38,36 @@ def load_path_finder(_db):
     return PathFinder(_db)
 
 
+def get_artist_image_url(artist_name: str) -> str:
+    """Generate a placeholder image URL for an artist using UI Avatars."""
+    # Use initials for the avatar
+    import urllib.parse
+    name_parts = artist_name.split()
+    initials = ''.join([part[0].upper() for part in name_parts[:2]])
+    # UI Avatars with custom colors (Kendrick red theme)
+    bg_color = "DC143C"  # Crimson red
+    text_color = "FFFFFF"  # White
+    return f"https://ui-avatars.com/api/?name={urllib.parse.quote(artist_name)}&size=200&background={bg_color}&color={text_color}&bold=true&font-size=0.4"
+
+
+def display_artist_card(artist_name: str, artist_id: str):
+    """Display an artist card with image and name."""
+    image_url = get_artist_image_url(artist_name)
+
+    st.markdown(f"""
+        <div style="text-align: center; padding: 1rem;">
+            <img src="{image_url}"
+                 style="border-radius: 12px; width: 120px; height: 120px; object-fit: cover; box-shadow: 0 4px 6px rgba(0,0,0,0.3);"
+                 alt="{artist_name}">
+            <div style="margin-top: 0.75rem; font-weight: 600; font-size: 1.1rem;">
+                {artist_name}
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+
 def display_path(connection: dict):
-    """Display the connection path with styling."""
+    """Display the connection path with artist cards and songs."""
     degrees = connection['degrees']
 
     # Degrees header
@@ -50,30 +78,42 @@ def display_path(connection: dict):
     else:
         st.success(f"🔥 **{degrees} degrees** of separation!")
 
+    st.markdown("")
     st.markdown("---")
+    st.markdown("")
 
-    # Path visualization
-    st.subheader("The Path")
+    # Path visualization with cards
+    path_artists = connection['path']
+    connections = connection['connections']
 
-    path_artists = [artist['name'] for artist in connection['path']]
-    path_display = " → ".join(path_artists)
-    st.markdown(f"**{path_display}**")
+    for i, artist in enumerate(path_artists):
+        # Display artist card
+        display_artist_card(artist['name'], artist['id'])
 
-    st.markdown("---")
+        # If not the last artist, show the connecting songs
+        if i < len(path_artists) - 1:
+            # Find the connection between this artist and the next
+            conn = connections[i]
+            songs = conn['songs']
 
-    # Collaboration details
-    st.subheader("Collaborations")
+            # Arrow and songs container
+            st.markdown(f"""
+                <div style="text-align: center; margin: 1.5rem 0;">
+                    <div style="font-size: 2rem; color: #DC143C; margin-bottom: 0.5rem;">↓</div>
+                    <div style="background: #1A1A1A; padding: 1rem; border-radius: 8px; border-left: 3px solid #DC143C;">
+                        <div style="font-weight: 600; margin-bottom: 0.5rem; color: #DC143C;">
+                            🎵 Connecting Song{"s" if len(songs) > 1 else ""}
+                        </div>
+            """, unsafe_allow_html=True)
 
-    for conn in connection['connections']:
-        from_artist = conn['from']['name']
-        to_artist = conn['to']['name']
-        songs = conn['songs']
+            # Display songs
+            for song in songs[:3]:  # Show first 3 songs
+                st.markdown(f"**•** {song}")
 
-        with st.expander(f"🎵 {from_artist} ↔ {to_artist} ({len(songs)} song{'s' if len(songs) != 1 else ''})"):
-            for song in songs[:10]:  # Limit to 10 songs
-                st.markdown(f"• {song}")
-            if len(songs) > 10:
-                st.markdown(f"*...and {len(songs) - 10} more*")
+            if len(songs) > 3:
+                st.markdown(f"*...and {len(songs) - 3} more*")
+
+            st.markdown("</div></div>", unsafe_allow_html=True)
 
 
 def main():
