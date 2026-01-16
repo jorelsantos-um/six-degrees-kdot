@@ -153,39 +153,100 @@ def display_path(connection: dict, spotify_client=None):
             from_artist = conn['from']['name']
             to_artist = conn['to']['name']
 
-            # Arrow and songs container
+            # Spotify-style connection section
             st.markdown(f"""
-                <div style="text-align: center; margin: 1.5rem 0;">
-                    <div style="font-size: 2rem; color: #DC143C; margin-bottom: 0.5rem;">↓</div>
-                    <div style="background: #1A1A1A; padding: 1rem; border-radius: 8px; border-left: 3px solid #DC143C;">
-                        <div style="font-weight: 600; margin-bottom: 0.5rem; color: #DC143C;">
-                            🎵 Connecting Song{"s" if len(songs) > 1 else ""}
+                <div style="margin: 32px auto; max-width: 600px;">
+                    <!-- Collaborated On Header -->
+                    <div style="
+                        text-align: center;
+                        margin-bottom: 24px;
+                    ">
+                        <div style="
+                            display: inline-block;
+                            font-size: 0.875rem;
+                            font-weight: 700;
+                            text-transform: uppercase;
+                            letter-spacing: 0.1em;
+                            color: #1DB954;
+                            background: rgba(29, 185, 84, 0.1);
+                            padding: 8px 24px;
+                            border-radius: 500px;
+                            border: 2px solid #1DB954;
+                        ">
+                            Collaborated On
                         </div>
+                    </div>
+
+                    <!-- Songs Container -->
+                    <div style="
+                        background: #181818;
+                        border-radius: 12px;
+                        padding: 24px;
+                        box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+                    ">
             """, unsafe_allow_html=True)
 
             # Display songs with preview players
             songs_to_show = songs[:3]  # Show first 3 songs
 
-            for song in songs_to_show:
+            for idx, song in enumerate(songs_to_show):
                 # Try to get preview URL if Spotify client is available
                 preview_url = None
                 if spotify_client:
                     preview_url = search_track_preview(song, [from_artist, to_artist], spotify_client)
 
-                # Display song name
-                st.markdown(f"**•** {song}")
+                # Display song in Spotify track row style
+                st.markdown(f"""
+                    <div style="
+                        padding: 12px 0;
+                        border-bottom: 1px solid #282828;
+                    ">
+                        <div style="
+                            display: flex;
+                            align-items: center;
+                            margin-bottom: 8px;
+                        ">
+                            <span style="
+                                color: #1DB954;
+                                font-weight: 700;
+                                margin-right: 12px;
+                                font-size: 1.1rem;
+                            ">♫</span>
+                            <span style="
+                                color: #FFFFFF;
+                                font-weight: 500;
+                                font-size: 1rem;
+                            ">{song}</span>
+                        </div>
+                """, unsafe_allow_html=True)
 
                 # Add preview player if available
                 if preview_url:
                     st.markdown(f"""
-                        <audio controls style="width: 100%; margin: 0.5rem 0 1rem 0;">
+                        <audio controls style="
+                            width: 100%;
+                            height: 32px;
+                            margin-top: 8px;
+                        ">
                             <source src="{preview_url}" type="audio/mpeg">
                             Your browser does not support the audio element.
                         </audio>
                     """, unsafe_allow_html=True)
 
+                st.markdown("</div>", unsafe_allow_html=True)
+
             if len(songs) > 3:
-                st.markdown(f"*...and {len(songs) - 3} more*")
+                st.markdown(f"""
+                    <div style="
+                        text-align: center;
+                        color: #B3B3B3;
+                        font-size: 0.875rem;
+                        margin-top: 16px;
+                        font-style: italic;
+                    ">
+                        +{len(songs) - 3} more collaboration{"s" if len(songs) - 3 > 1 else ""}
+                    </div>
+                """, unsafe_allow_html=True)
 
             st.markdown("</div></div>", unsafe_allow_html=True)
 
