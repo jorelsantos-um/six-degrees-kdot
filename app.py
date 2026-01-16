@@ -125,16 +125,62 @@ def display_path(connection: dict, spotify_client=None):
     """Display the connection path with artist cards and songs."""
     degrees = connection['degrees']
 
-    # Degrees header
+    # Degrees header - Spotify style
     if degrees == 0:
-        st.success("🎤 That's Kendrick Lamar himself!")
+        st.markdown("""
+            <div style="
+                text-align: center;
+                padding: 24px;
+                background: linear-gradient(135deg, rgba(29, 185, 84, 0.2), rgba(29, 185, 84, 0.05));
+                border-radius: 12px;
+                border: 2px solid #1DB954;
+                margin-bottom: 32px;
+            ">
+                <div style="font-size: 2rem; margin-bottom: 8px;">🎤</div>
+                <div style="font-size: 1.25rem; font-weight: 700; color: #1DB954;">
+                    That's Kendrick Lamar himself!
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
     elif degrees == 1:
-        st.success(f"🔥 **{degrees} degree** of separation!")
+        st.markdown(f"""
+            <div style="
+                text-align: center;
+                padding: 24px;
+                background: linear-gradient(135deg, rgba(29, 185, 84, 0.2), rgba(29, 185, 84, 0.05));
+                border-radius: 12px;
+                border: 2px solid #1DB954;
+                margin-bottom: 32px;
+            ">
+                <div style="font-size: 2rem; margin-bottom: 8px;">🔥</div>
+                <div style="font-size: 1.5rem; font-weight: 900; color: #FFFFFF;">
+                    {degrees} Degree
+                </div>
+                <div style="font-size: 1rem; color: #B3B3B3; margin-top: 4px;">
+                    of separation
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
     else:
-        st.success(f"🔥 **{degrees} degrees** of separation!")
+        st.markdown(f"""
+            <div style="
+                text-align: center;
+                padding: 24px;
+                background: linear-gradient(135deg, rgba(29, 185, 84, 0.2), rgba(29, 185, 84, 0.05));
+                border-radius: 12px;
+                border: 2px solid #1DB954;
+                margin-bottom: 32px;
+            ">
+                <div style="font-size: 2rem; margin-bottom: 8px;">🔥</div>
+                <div style="font-size: 1.5rem; font-weight: 900; color: #FFFFFF;">
+                    {degrees} Degrees
+                </div>
+                <div style="font-size: 1rem; color: #B3B3B3; margin-top: 4px;">
+                    of separation
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
 
-    st.markdown("")
-    st.markdown("---")
     st.markdown("")
 
     # Path visualization with cards
@@ -303,6 +349,34 @@ def main():
         /* Clean card styling */
         .element-container {
             margin-bottom: 1rem;
+        }
+
+        /* Audio player styling */
+        audio {
+            filter: brightness(0.9) contrast(1.1);
+            border-radius: 8px;
+        }
+
+        audio::-webkit-media-controls-panel {
+            background-color: #282828;
+        }
+
+        audio::-webkit-media-controls-play-button {
+            background-color: #1DB954;
+            border-radius: 50%;
+        }
+
+        /* Success message styling */
+        .stAlert {
+            border-radius: 8px;
+        }
+
+        /* Divider styling */
+        hr {
+            border: none;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, #1DB954, transparent);
+            margin: 2rem 0;
         }
         </style>
     """, unsafe_allow_html=True)
