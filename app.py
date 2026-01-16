@@ -185,9 +185,18 @@ def display_path(connection: dict, spotify_client=None):
 
 
 def main():
-    # Custom CSS for Kendrick aesthetic
+    # Custom CSS for Spotify aesthetic
     st.markdown("""
         <style>
+        /* Spotify color variables */
+        :root {
+            --spotify-green: #1DB954;
+            --spotify-black: #121212;
+            --spotify-card: #181818;
+            --spotify-gray: #B3B3B3;
+            --spotify-white: #FFFFFF;
+        }
+
         /* Main title styling */
         h1 {
             font-weight: 900;
@@ -200,17 +209,26 @@ def main():
             border-radius: 8px;
             font-size: 1.1rem;
             padding: 0.75rem;
+            background-color: #181818;
+            border: 1px solid #282828;
         }
 
-        /* Button styling */
+        /* Button styling - Spotify style */
         .stButton button {
-            border-radius: 8px;
-            font-weight: 600;
-            padding: 0.6rem 2rem;
+            border-radius: 500px;
+            font-weight: 700;
+            padding: 0.75rem 2rem;
             transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-size: 0.875rem;
         }
 
-        /* Kendrick aesthetic accents */
+        .stButton button:hover {
+            transform: scale(1.04);
+        }
+
+        /* Spotify aesthetic accents */
         .stMarkdown {
             line-height: 1.6;
         }
