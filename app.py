@@ -87,30 +87,36 @@ def search_track_preview(song_name: str, artist_names: list, spotify_client) -> 
     return None
 
 
-def get_artist_image_url(artist_name: str) -> str:
-    """Generate a placeholder image URL for an artist using UI Avatars."""
-    # Use initials for the avatar
-    import urllib.parse
-    name_parts = artist_name.split()
-    initials = ''.join([part[0].upper() for part in name_parts[:2]])
-    # UI Avatars with custom colors (Kendrick red theme)
-    bg_color = "DC143C"  # Crimson red
-    text_color = "FFFFFF"  # White
-    return f"https://ui-avatars.com/api/?name={urllib.parse.quote(artist_name)}&size=200&background={bg_color}&color={text_color}&bold=true&font-size=0.4"
-
-
 def display_artist_card(artist_name: str, artist_id: str):
-    """Display an artist card with image and name."""
-    image_url = get_artist_image_url(artist_name)
-
+    """Display an artist card in Spotify style - clean, modern, professional."""
     st.markdown(f"""
-        <div style="text-align: center; padding: 1rem;">
-            <img src="{image_url}"
-                 style="border-radius: 12px; width: 120px; height: 120px; object-fit: cover; box-shadow: 0 4px 6px rgba(0,0,0,0.3);"
-                 alt="{artist_name}">
-            <div style="margin-top: 0.75rem; font-weight: 600; font-size: 1.1rem;">
+        <div style="
+            background: #181818;
+            border-radius: 12px;
+            padding: 32px;
+            margin: 24px auto;
+            max-width: 500px;
+            text-align: center;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            border: 2px solid #1DB954;
+            transition: transform 0.2s;
+        ">
+            <div style="
+                font-size: 2rem;
+                font-weight: 900;
+                color: #FFFFFF;
+                letter-spacing: -0.02em;
+                margin-bottom: 8px;
+            ">
                 {artist_name}
             </div>
+            <div style="
+                width: 40px;
+                height: 3px;
+                background: #1DB954;
+                margin: 0 auto;
+                border-radius: 2px;
+            "></div>
         </div>
     """, unsafe_allow_html=True)
 
